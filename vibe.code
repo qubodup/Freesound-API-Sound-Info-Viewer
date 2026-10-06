@@ -1,0 +1,2 @@
+html js freesound api2 i enter sound url or id in one field and api key in the other and submit. table shows output. local storage stores everything. clear id input button, clear output button, key must be manually removed. make html js tool
+also support https://freesound.org/s/683298/

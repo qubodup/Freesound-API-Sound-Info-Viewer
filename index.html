@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Freesound API Sound Info Viewer</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #f5f5f5;
+      color: #222;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      font-size: 24px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #bbb;
+      border-radius: 5px;
+      font: inherit;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #555;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 1px solid #999;
+      border-radius: 5px;
+      background: #fff;
+      color: #222;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button:hover {
+      background: #eee;
+    }
+
+    button.primary {
+      background: #222;
+      color: #fff;
+      border-color: #222;
+    }
+
+    button.primary:hover {
+      background: #444;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 5px;
+      background: #f0f0f0;
+      white-space: pre-wrap;
+      display: none;
+    }
+
+    .status.visible {
+      display: block;
+    }
+
+    .status.error {
+      background: #fbeaea;
+      color: #9b1c1c;
+    }
+
+    .status.success {
+      background: #eaf7ed;
+      color: #176b2c;
+    }
+
+    .output-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 9px 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f0f0f0;
+      width: 220px;
+      white-space: nowrap;
+    }
+
+    td {
+      word-break: break-word;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .empty {
+      color: #777;
+      padding: 20px 0;
+    }
+
+    .note {
+      margin-top: 8px;
+      color: #666;
+      font-size: 13px;
+    }
+
+    .key-warning {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #666;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 12px;
+      }
+
+      .panel {
+        padding: 14px;
+      }
+
+      th {
+        width: 130px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <h1>Freesound API Sound Info Viewer</h1>
+
+    <div class="panel">
+      <div class="field">
+        <label for="soundInput">Freesound Sound URL or ID</label>
+        <input
+          id="soundInput"
+          type="text"
+          placeholder="https://freesound.org/people/.../sounds/123456/ or 123456"
+          autocomplete="off"
+        >
+      </div>
+
+      <div class="field">
+        <label for="apiKey">Freesound API Key</label>
+        <input
+          id="apiKey"
+          type="password"
+          placeholder="Enter your Freesound API key"
+          autocomplete="off"
+        >
+        <div class="key-warning">
+          Stored in localStorage. Remove manually if needed
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button class="primary" id="submitBtn">Submit</button>
+        <button id="clearIdBtn">Clear ID Input</button>
+        <button id="clearOutputBtn">Clear Output</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Output</h2>
+
+      <div id="output" class="output-wrapper">
+        <div class="empty">No result yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    "use strict";
+
+    const STORAGE_KEYS = {
+      soundInput: "freesound_tool_sound_input",
+      apiKey: "freesound_tool_api_key",
+      output: "freesound_tool_output"
+    };
+
+    const soundInput = document.getElementById("soundInput");
+    const apiKey = document.getElementById("apiKey");
+    const submitBtn = document.getElementById("submitBtn");
+    const clearIdBtn = document.getElementById("clearIdBtn");
+    const clearOutputBtn = document.getElementById("clearOutputBtn");
+    const output = document.getElementById("output");
+    const status = document.getElementById("status");
+
+    /*
+     * Restore everything from localStorage.
+     */
+    function restoreState() {
+      soundInput.value =
+        localStorage.getItem(STORAGE_KEYS.soundInput) || "";
+
+      apiKey.value =
+        localStorage.getItem(STORAGE_KEYS.apiKey) || "";
+
+      const savedOutput =
+        localStorage.getItem(STORAGE_KEYS.output);
+
+      if (savedOutput) {
+        try {
+          const data = JSON.parse(savedOutput);
+          renderOutput(data);
+        } catch {
+          localStorage.removeItem(STORAGE_KEYS.output);
+        }
+      }
+    }
+
+    /*
+     * Persist input values immediately.
+     */
+    soundInput.addEventListener("input", () => {
+      localStorage.setItem(
+        STORAGE_KEYS.soundInput,
+        soundInput.value
+      );
+    });
+
+    apiKey.addEventListener("input", () => {
+      localStorage.setItem(
+        STORAGE_KEYS.apiKey,
+        apiKey.value
+      );
+    });
+
+    /*
+     * Extract a Freesound sound ID from either:
+     *
+     * 123456
+     *
+     * or:
+     *
+     * https://freesound.org/people/example/sounds/123456/
+     *
+     * Also handles URLs containing additional query/hash data.
+     */
+function extractSoundId(value) {
+  const input = value.trim();
+
+  if (!input) {
+    throw new Error("Enter a Freesound sound URL or ID.");
+  }
+
+  // Direct numeric ID.
+  if (/^\d+$/.test(input)) {
+    return input;
+  }
+
+  try {
+    const url = new URL(input);
+
+    // Standard Freesound URL:
+    // /people/username/sounds/683298/
+    let match = url.pathname.match(
+      /\/sounds\/(\d+)(?:\/|$)/
+    );
+
+    if (match) {
+      return match[1];
+    }
+
+    // Short Freesound URL:
+    // /s/683298/
+    match = url.pathname.match(
+      /\/s\/(\d+)(?:\/|$)/
+    );
+
+    if (match) {
+      return match[1];
+    }
+
+  } catch {
+    // Fall through to path matching below.
+  }
+
+  // Also allow pasted paths such as:
+  // /s/683298/
+  // /people/foo/sounds/683298/
+  let match = input.match(
+    /\/sounds\/(\d+)(?:\/|$)/
+  );
+
+  if (match) {
+    return match[1];
+  }
+
+  match = input.match(
+    /\/s\/(\d+)(?:\/|$)/
+  );
+
+  if (match) {
+    return match[1];
+  }
+
+  throw new Error(
+    "Could not find a Freesound sound ID in the supplied value."
+  );
+}
+    /*
+     * Show status.
+     */
+    function showStatus(message, type = "") {
+      status.textContent = message;
+      status.className = "status visible";
+
+      if (type) {
+        status.classList.add(type);
+      }
+    }
+
+    function hideStatus() {
+      status.textContent = "";
+      status.className = "status";
+    }
+
+    /*
+     * Escape HTML before inserting values into the table.
+     */
+    function escapeHtml(value) {
+      if (value === null || value === undefined) {
+        return "";
+      }
+
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    /*
+     * Convert arbitrary API values into readable table cells.
+     */
+    function formatValue(value) {
+      if (value === null) {
+        return "null";
+      }
+
+      if (value === undefined) {
+        return "";
+      }
+
+      if (typeof value === "object") {
+        return `<pre>${escapeHtml(
+          JSON.stringify(value, null, 2)
+        )}</pre>`;
+      }
+
+      if (typeof value === "boolean") {
+        return value ? "true" : "false";
+      }
+
+      return escapeHtml(value);
+    }
+
+    /*
+     * Render the API response as a two-column table.
+     */
+    function renderOutput(data) {
+      if (!data || typeof data !== "object") {
+        output.innerHTML =
+          '<div class="empty">No result.</div>';
+        return;
+      }
+
+      const entries = Object.entries(data);
+
+      if (!entries.length) {
+        output.innerHTML =
+          '<div class="empty">Empty API response.</div>';
+        return;
+      }
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      for (const [key, value] of entries) {
+        html += `
+          <tr>
+            <th>${escapeHtml(key)}</th>
+            <td>${formatValue(value)}</td>
+          </tr>
+        `;
+      }
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      output.innerHTML = html;
+    }
+
+    /*
+     * Submit request to Freesound API v2.
+     *
+     * Endpoint:
+     * https://freesound.org/apiv2/sounds/{id}/
+     *
+     * Authentication:
+     * ?token=API_KEY
+     */
+    async function fetchSound() {
+      hideStatus();
+
+      const rawInput = soundInput.value.trim();
+      const token = apiKey.value.trim();
+
+      if (!token) {
+        showStatus(
+          "Enter your Freesound API key.",
+          "error"
+        );
+        return;
+      }
+
+      let soundId;
+
+      try {
+        soundId = extractSoundId(rawInput);
+      } catch (error) {
+        showStatus(error.message, "error");
+        return;
+      }
+
+      // Persist the submitted values.
+      localStorage.setItem(
+        STORAGE_KEYS.soundInput,
+        rawInput
+      );
+
+      localStorage.setItem(
+        STORAGE_KEYS.apiKey,
+        token
+      );
+
+      const endpoint =
+        `https://freesound.org/apiv2/sounds/${encodeURIComponent(soundId)}/` +
+        `?token=${encodeURIComponent(token)}`;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Loading...";
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "GET",
+          headers: {
+            "Accept": "application/json"
+          }
+        });
+
+        let data;
+
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(
+            `Freesound returned HTTP ${response.status}, but the response was not valid JSON.`
+          );
+        }
+
+        if (!response.ok) {
+          const message =
+            data && data.detail
+              ? data.detail
+              : `Freesound API returned HTTP ${response.status}.`;
+
+          throw new Error(message);
+        }
+
+        // Store the complete API response.
+        localStorage.setItem(
+          STORAGE_KEYS.output,
+          JSON.stringify(data)
+        );
+
+        renderOutput(data);
+
+        showStatus(
+          `Successfully retrieved sound ${soundId}.`,
+          "success"
+        );
+
+      } catch (error) {
+        showStatus(
+          error.message || "Request failed.",
+          "error"
+        );
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit";
+      }
+    }
+
+    /*
+     * Clear only the sound URL/ID input.
+     * The API key is intentionally untouched.
+     */
+    clearIdBtn.addEventListener("click", () => {
+      soundInput.value = "";
+      localStorage.removeItem(STORAGE_KEYS.soundInput);
+      soundInput.focus();
+      hideStatus();
+    });
+
+    /*
+     * Clear only the displayed/saved API output.
+     */
+    clearOutputBtn.addEventListener("click", () => {
+      output.innerHTML =
+        '<div class="empty">No result yet.</div>';
+
+      localStorage.removeItem(STORAGE_KEYS.output);
+      hideStatus();
+    });
+
+    submitBtn.addEventListener("click", fetchSound);
+
+    soundInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        fetchSound();
+      }
+    });
+
+    apiKey.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        fetchSound();
+      }
+    });
+
+    /*
+     * Restore persisted state on startup.
+     */
+    restoreState();
+  </script>
+</body>
+</html>
